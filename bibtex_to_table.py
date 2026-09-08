@@ -2,9 +2,10 @@
 # Author contact: Florian Pfaff pfaff@kit.edu
 
 import argparse
+import html
+import re
 import bibtexparser
 from bibtexparser.bparser import BibTexParser
-from bibtexparser.customization import convert_to_unicode
 from bibtexparser.bwriter import BibTexWriter
 from bibtexparser.bibdatabase import BibDatabase
 import codecs
@@ -13,9 +14,39 @@ import codecs
 def load_bibtex_file(input_file):
     with open(input_file, encoding='utf-8') as bibtex_file:
         parser = BibTexParser(common_strings=True)
-        parser.customization = convert_to_unicode
         bib_database = bibtexparser.load(bibtex_file, parser=parser)
     return bib_database
+
+
+def load_raw_entries(input_file):
+    with open(input_file, encoding='utf-8') as bibtex_file:
+        source = bibtex_file.read()
+
+    raw_entries = {}
+    entry_start_pattern = re.compile(r'@[^{\s]+\s*([{(])')
+    for match in entry_start_pattern.finditer(source):
+        opening = match.group(1)
+        closing = '}' if opening == '{' else ')'
+        depth = 1
+        position = match.end()
+        in_quotes = False
+        while position < len(source) and depth:
+            character = source[position]
+            if character == '"' and (position == 0 or source[position - 1] != '\\'):
+                in_quotes = not in_quotes
+            elif not in_quotes:
+                if character == opening:
+                    depth += 1
+                elif character == closing:
+                    depth -= 1
+            position += 1
+
+        if depth:
+            continue
+        raw_entry = source[match.start():position]
+        header = source[match.end():].split(',', 1)[0].strip()
+        raw_entries[header] = raw_entry
+    return raw_entries
 
 
 def verify_name_in_authors(full_name, authors, title):
@@ -24,7 +55,7 @@ def verify_name_in_authors(full_name, authors, title):
         raise NameError(f"Name {last_name} faulty in entry {title}")
 
 
-def write_entry(entry, output_file, full_name_to_verify):
+def write_entry(entry, output_file, full_name_to_verify, raw_entry=None):
     if "author" in entry.keys():
         authors = entry["author"]
     elif "editor" in entry.keys():
@@ -84,47 +115,53 @@ def write_entry(entry, output_file, full_name_to_verify):
         + submission_type
         + '"></div>\n</td>\n'
     )
-    output_file.write("<td> <i>" + authors + "</i>,</br> <b>" + title + "</b>,</br>")
+    output_file.write(
+        "<td> <i>"
+        + html.escape(authors)
+        + "</i>,</br> <b>"
+        + html.escape(title)
+        + "</b>,</br>"
+    )
     if not booktitle == "none":
-        output_file.write(booktitle + ", ")
+        output_file.write(html.escape(booktitle) + ", ")
     if (
         "pages" in entry.keys()
         and "volume" in entry.keys()
         and "number" in entry.keys()
     ):
         output_file.write(
-            entry["volume"]
+            html.escape(entry["volume"])
             + "("
-            + entry["number"]
+            + html.escape(entry["number"])
             + "):"
-            + (entry["pages"].replace("--", "\u2013")).replace("-", "\u2013")
+            + html.escape((entry["pages"].replace("--", "\u2013")).replace("-", "\u2013"))
             + ", "
         )
     elif "pages" in entry.keys() and "volume" in entry.keys():
         output_file.write(
-            entry["volume"]
+            html.escape(entry["volume"])
             + ":"
-            + (entry["pages"].replace("--", "\u2013")).replace("-", "\u2013")
+            + html.escape((entry["pages"].replace("--", "\u2013")).replace("-", "\u2013"))
             + ", "
         )
     elif "pages" in entry.keys():
         output_file.write(
             "pp. "
-            + (entry["pages"].replace("--", "\u2013")).replace("-", "\u2013")
+            + html.escape((entry["pages"].replace("--", "\u2013")).replace("-", "\u2013"))
             + ", "
         )
 
     if "publisher" in entry.keys():
-        output_file.write(entry["publisher"] + ", ")
+        output_file.write(html.escape(entry["publisher"]) + ", ")
     if "address" in entry.keys():
-        output_file.write(entry["address"] + ", ")
+        output_file.write(html.escape(entry["address"]) + ", ")
 
     if "series" in entry.keys():
-        output_file.write(entry["series"] + ", ")
+        output_file.write(html.escape(entry["series"]) + ", ")
 
     if "month" in entry.keys():
-        output_file.write(entry["month"] + ", ")
-    output_file.write(str(entry["year"]))
+        output_file.write(html.escape(entry["month"]) + ", ")
+    output_file.write(html.escape(str(entry["year"])))
     output_file.write(".\n")
     output_file.write(
         '<p class="infolinks"> <a href="javascript:toggleInfo(\''
@@ -134,11 +171,13 @@ def write_entry(entry, output_file, full_name_to_verify):
     if "pdf" in entry.keys():
         output_file.write(
             ' <a href="https://isas.iar.kit.edu/pdf/'
-            + entry["pdf"]
+            + html.escape(entry["pdf"], quote=True)
             + '" target="_blank"><img src="https://isas.iar.kit.edu/img/PDF.png" alt="PDF" /></a>'
         )
     if "url" in entry.keys():
-        output_file.write(' <a href="' + entry["url"] + '" target="_blank">URL</a>')
+        output_file.write(
+            ' <a href="' + html.escape(entry["url"], quote=True) + '" target="_blank">URL</a>'
+        )
     if "annote" in entry.keys():
         output_file.write(' <font color="red">' + entry["annote"] + "</font>")
     output_file.write("</p>\n</td>\n</tr>\n")
@@ -147,11 +186,11 @@ def write_entry(entry, output_file, full_name_to_verify):
         + pubid
         + '" class="bibtex noshow"><td></td>\n<td><b>BibTeX</b>:\n<pre>\n'
     )
-    output_file.write(bibtex)
+    output_file.write(html.escape(raw_entry or bibtex, quote=False))
     output_file.write("\n</pre>\n</td>\n</tr>\n\n")
 
 
-def write_output(bib_database, output_filename, full_name_to_verify=None):
+def write_output(bib_database, output_filename, raw_entries, full_name_to_verify=None):
     output_file = codecs.open(output_filename, "w", "utf-8")
     allMonths = ["none", "December", "November", "October", "September", "August",
                  "July", "June", "May", "April", "March", "February", "January"]
@@ -182,15 +221,25 @@ def write_output(bib_database, output_filename, full_name_to_verify=None):
                     month_of_entry = entry["month"]
                 if not month_of_entry == month:
                     continue  # Entry currently irrelevant
-                write_entry(entry, output_file, full_name_to_verify)
+                write_entry(
+                    entry,
+                    output_file,
+                    full_name_to_verify,
+                    raw_entries.get(entry["ID"]),
+                )
 
-    output_file.write("</tbody></table>")
+    output_file.write(
+        "</tbody></table>\n"
+        '<script>window.MathJax = {tex: {inlineMath: [["$", "$"], ["\\\\(", "\\\\)"]]}, svg: {fontCache: "global"}};</script>\n'
+        '<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>'
+    )
     output_file.close()
 
 
 def main(input_file, output_file, full_name_to_verify=None):
     bib_database = load_bibtex_file(input_file)
-    write_output(bib_database, output_file, full_name_to_verify)
+    raw_entries = load_raw_entries(input_file)
+    write_output(bib_database, output_file, raw_entries, full_name_to_verify)
 
 
 if __name__ == "__main__":
