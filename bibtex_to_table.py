@@ -8,8 +8,11 @@ import bibtexparser
 from bibtexparser.bparser import BibTexParser
 from bibtexparser.bwriter import BibTexWriter
 from bibtexparser.bibdatabase import BibDatabase
-from bibtexparser.latexenc import latex_to_unicode
+from pylatexenc.latex2text import LatexNodes2Text
 import codecs
+
+
+latex_decoder = LatexNodes2Text(math_mode='verbatim', strict_latex_spaces=False)
 
 
 def load_bibtex_file(input_file):
@@ -57,15 +60,7 @@ def verify_name_in_authors(full_name, authors, title):
 
 
 def latex_to_display_text(value):
-    parts = []
-    position = 0
-    for match in re.finditer(r"(\$(?:\\.|[^$\\])*\$|\\\(.*?\\\))|\\.", value):
-        if match.group(1):
-            parts.append(latex_to_unicode(value[position:match.start()]))
-            parts.append(match.group(1))
-            position = match.end()
-    parts.append(latex_to_unicode(value[position:]))
-    return "".join(parts)
+    return latex_decoder.latex_to_text(value)
 
 
 def remove_title_grouping_braces(value):
@@ -173,12 +168,12 @@ def write_entry(entry, output_file, full_name_to_verify, raw_entry=None):
         )
 
     if "publisher" in entry.keys():
-        output_file.write(html.escape(entry["publisher"]) + ", ")
+        output_file.write(html.escape(latex_to_display_text(entry["publisher"])) + ", ")
     if "address" in entry.keys():
-        output_file.write(html.escape(entry["address"]) + ", ")
+        output_file.write(html.escape(latex_to_display_text(entry["address"])) + ", ")
 
     if "series" in entry.keys():
-        output_file.write(html.escape(entry["series"]) + ", ")
+        output_file.write(html.escape(latex_to_display_text(entry["series"])) + ", ")
 
     if "month" in entry.keys():
         output_file.write(html.escape(entry["month"]) + ", ")
