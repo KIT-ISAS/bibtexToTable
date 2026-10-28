@@ -55,8 +55,12 @@ def verify_name_in_authors(full_name, authors, title):
         raise NameError(f"Name {last_name} faulty in entry {title}")
 
 
-def remove_math_grouping_braces(value):
-    return re.sub(r"\{(\$[^$]*\$)\}", r"\1", value)
+def remove_title_grouping_braces(value):
+    return re.sub(
+        r"(\$(?:\\.|[^$\\])*\$|\\\(.*?\\\)|\\.)|[{}]",
+        lambda match: match.group(1) or "",
+        value,
+    )
 
 
 def write_entry(entry, output_file, full_name_to_verify, raw_entry=None):
@@ -68,7 +72,7 @@ def write_entry(entry, output_file, full_name_to_verify, raw_entry=None):
     else:  # Entry has neither author nor editor, this must not happen
         raise ValueError("Entry has neither author nor editor: " + entry["title"])
 
-    title = remove_math_grouping_braces(entry["title"])
+    title = remove_title_grouping_braces(entry["title"])
 
     if full_name_to_verify:
         verify_name_in_authors(full_name_to_verify, authors, title)
