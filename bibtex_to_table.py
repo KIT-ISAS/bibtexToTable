@@ -8,6 +8,7 @@ import bibtexparser
 from bibtexparser.bparser import BibTexParser
 from bibtexparser.bwriter import BibTexWriter
 from bibtexparser.bibdatabase import BibDatabase
+from bibtexparser.latexenc import latex_to_unicode
 import codecs
 
 
@@ -55,12 +56,20 @@ def verify_name_in_authors(full_name, authors, title):
         raise NameError(f"Name {last_name} faulty in entry {title}")
 
 
+def latex_to_display_text(value):
+    parts = []
+    position = 0
+    for match in re.finditer(r"(\$(?:\\.|[^$\\])*\$|\\\(.*?\\\))|\\.", value):
+        if match.group(1):
+            parts.append(latex_to_unicode(value[position:match.start()]))
+            parts.append(match.group(1))
+            position = match.end()
+    parts.append(latex_to_unicode(value[position:]))
+    return "".join(parts)
+
+
 def remove_title_grouping_braces(value):
-    return re.sub(
-        r"(\$(?:\\.|[^$\\])*\$|\\\(.*?\\\)|\\.)|[{}]",
-        lambda match: match.group(1) or "",
-        value,
-    )
+    return latex_to_display_text(value)
 
 
 def write_entry(entry, output_file, full_name_to_verify, raw_entry=None):
@@ -77,6 +86,8 @@ def write_entry(entry, output_file, full_name_to_verify, raw_entry=None):
     if full_name_to_verify:
         verify_name_in_authors(full_name_to_verify, authors, title)
 
+    authors = latex_to_display_text(authors)
+
     if "booktitle" not in entry.keys():
         if "journal" not in entry.keys():
             booktitle = "none"
@@ -84,6 +95,8 @@ def write_entry(entry, output_file, full_name_to_verify, raw_entry=None):
             booktitle = entry["journal"]
     else:
         booktitle = entry["booktitle"]
+
+    booktitle = latex_to_display_text(booktitle)
 
     tmpwriter = BibTexWriter()
     tmpDatabase = BibDatabase()
